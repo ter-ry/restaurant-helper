@@ -144,11 +144,11 @@ export function PilotSquareUsagePage() {
 
   return <PageLayout title="Usage & Variance" eyebrow="Operations workspace" className="pilot-usage-shell" embedded>
     <div className="pilot-usage-layout space-y-4">
-      <Card className="pilot-usage-controls p-4">
+      <Card className="pilot-usage-controls compact-form p-4">
         <div className="flex justify-end">
           <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:bg-slate-50" type="button" onClick={() => void load()} disabled={refreshing}><RefreshCw className="h-4 w-4" />{refreshing ? "Refreshing…" : "Refresh"}</button>
         </div>
-        <div className="mt-5 grid gap-3 sm:grid-cols-3">
+        <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1.2fr)_minmax(12rem,1fr)_minmax(12rem,1fr)]">
           <label className="block"><span className="text-sm font-semibold text-ink">Location</span><select className="input mt-1" value={selectedLocationId ?? ""} onChange={(event) => setSelectedLocationId(event.target.value ? Number(event.target.value) : null)}><option value="">All locations</option>{locationOptions.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}</select></label>
           <label className="block"><span className="text-sm font-semibold text-ink">Start at</span><ThemedDateTimeInput className="input mt-1" type="datetime-local" value={startAt} onChange={(event) => setStartAt(event.target.value)} /></label>
           <label className="block"><span className="text-sm font-semibold text-ink">End at</span><ThemedDateTimeInput className="input mt-1" type="datetime-local" value={endAt} onChange={(event) => setEndAt(event.target.value)} /></label>

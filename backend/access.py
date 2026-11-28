@@ -59,6 +59,8 @@ ENDPOINT_MODULE_KEYS: dict[str, str] = {
     "pilot_api.menu_costing": "MENU_COSTING",
     "pilot_api.create_menu_costing_recipe": "MENU_COSTING",
     "pilot_api.update_menu_costing_recipe": "MENU_COSTING",
+    "pilot_api.save_new_menu_costing_recipe": "MENU_COSTING",
+    "pilot_api.save_menu_costing_recipe": "MENU_COSTING",
     "pilot_api.delete_menu_costing_recipe": "MENU_COSTING",
     "pilot_api.create_menu_costing_recipe_ingredient": "MENU_COSTING",
     "pilot_api.update_menu_costing_recipe_ingredient": "MENU_COSTING",

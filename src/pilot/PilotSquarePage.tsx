@@ -341,7 +341,7 @@ export function PilotSquarePage() {
 
   return (
     <div className="workspace-page">
-      <Card className="surface-panel workspace-card">
+      <Card className="surface-panel workspace-card compact-form">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-3xl">
             <p className="text-xs font-bold uppercase tracking-[0.24em] text-brand-700">Square</p>

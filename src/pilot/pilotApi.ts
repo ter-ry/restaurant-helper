@@ -745,6 +745,8 @@ export interface PilotMenuCostingRecipe {
   ingredients: PilotMenuCostingRecipeIngredient[];
   totalCost: number | null;
   costPerYield: number | null;
+  totalCostExact?: number | null;
+  costPerYieldExact?: number | null;
   costAvailable: boolean;
   warnings: string[];
   createdByUserId: number | null;
@@ -766,6 +768,8 @@ export interface PilotMenuCostingMenuItem {
   notes: string;
   recipe: PilotMenuCostingRecipe | null;
   recipeCostPerYield: number | null;
+  recipeCostPerYieldExact?: number | null;
+  recipeCostPerYieldRounded?: number | null;
   grossProfit: number | null;
   foodCostPercent: number | null;
   grossMarginPercent: number | null;
@@ -1480,6 +1484,17 @@ export async function updatePilotMenuCostingRecipe(recipeId: number, payload: Re
     headers: {
       "Content-Type": "application/json",
     },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function savePilotMenuCostingRecipe(recipeId: number | null, payload: Record<string, unknown>) {
+  const path = recipeId == null
+    ? "/api/pilot/menu-costing/recipes/save"
+    : `/api/pilot/menu-costing/recipes/${recipeId}/save`;
+  return requestCsrfJson<PilotMenuCostingRecipe>(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
 }

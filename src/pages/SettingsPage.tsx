@@ -19,11 +19,11 @@ export function SettingsPage() {
 
   return (
     <PageLayout title={demo.copy.settings.title} eyebrow={demo.copy.settings.eyebrow} description={demo.copy.settings.description}>
-      <div className="grid gap-6 xl:grid-cols-[1fr_0.8fr]">
+      <div className="compact-form grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,0.8fr)]">
         <section>
           <SectionHeader title="Restaurant Profile" />
-          <Card className="p-5">
-            <div className="grid gap-4 md:grid-cols-2">
+          <Card className="p-4 sm:p-5">
+            <div className="grid gap-3 md:grid-cols-2">
               <Input label="Restaurant name" value={demo.customization.restaurantName} />
               <Input label="City" value={demo.customization.city} />
               <Input label="Restaurant type" value={demo.customization.restaurantType} />
