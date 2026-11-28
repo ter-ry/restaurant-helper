@@ -17,7 +17,7 @@ export function WorkspaceTabs({ tabs, value, onChange, className, ariaLabel = "W
   return (
     <div
       aria-label={ariaLabel}
-      className={`pilot-tabs flex flex-wrap gap-2 rounded-2xl border border-line bg-slate-50 p-2 ${className ?? ""}`.trim()}
+      className={`pilot-tabs flex flex-wrap gap-1.5 rounded-2xl border border-line bg-slate-50 p-1.5 ${className ?? ""}`.trim()}
       role="tablist"
     >
       {tabs.map((tab) => {
@@ -28,7 +28,7 @@ export function WorkspaceTabs({ tabs, value, onChange, className, ariaLabel = "W
             key={tab.id}
             aria-selected={active}
             aria-label={tab.label}
-            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+              className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-semibold transition ${
               active ? "bg-white text-ink shadow-soft" : "text-muted hover:bg-white/70 hover:text-ink"
             }`}
             onClick={() => onChange(tab.id)}

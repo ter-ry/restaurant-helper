@@ -134,12 +134,12 @@ export function PilotReportsPage({ initialView = "daily" }: { initialView?: Repo
   ];
 
   return <div className="space-y-5">
-    <Card className="surface-panel p-5 sm:p-6">
+    <Card className="surface-panel compact-form p-4 sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-ink">{view === "daily" ? "Daily report" : "Weekly report"}</h1>
         </div>
-        <div className="flex flex-wrap items-end gap-2">
+        <div className="compact-form flex flex-wrap items-end gap-2">
           {view === "daily" ? <label className="text-sm font-semibold text-muted">Business date<ThemedDateTimeInput aria-label="Report date" className="input mt-1" type="date" value={dailyDate} onChange={(event) => setDailyDate(event.target.value)} /></label> : <><label className="text-sm font-semibold text-muted">Start date<ThemedDateTimeInput aria-label="Weekly start date" className="input mt-1" type="date" value={weeklyStart} onChange={(event) => setWeeklyStart(event.target.value)} /></label><label className="text-sm font-semibold text-muted">End date<ThemedDateTimeInput aria-label="Weekly end date" className="input mt-1" type="date" value={weeklyEnd} onChange={(event) => setWeeklyEnd(event.target.value)} /></label></>}
           <Button type="button" variant="secondary" onClick={() => void load()}><RefreshCcw className="h-4 w-4" />Refresh</Button>
         </div>

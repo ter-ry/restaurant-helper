@@ -1801,9 +1801,10 @@ test("authenticated menu costing page loads live pricing data", async ({ page })
   await expect(page.locator("h1", { hasText: "Menu Costing" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "Menu items" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByText("Cheesy Toast").first()).toBeVisible();
-  await expect(page.getByText("Price $12.00").first()).toBeVisible();
-  await expect(page.getByText("Cost $2.00").first()).toBeVisible();
-  await expect(page.getByText("Food cost 16.7%").first()).toBeVisible();
+  const menuRow = page.getByRole("row", { name: /Cheesy Toast/ }).first();
+  await expect(menuRow.getByRole("cell", { name: "Price $12.00" })).toBeVisible();
+  await expect(menuRow.getByRole("cell", { name: "Cost $2.00" })).toBeVisible();
+  await expect(menuRow.getByRole("cell", { name: "Food cost 16.7%" })).toBeVisible();
 });
 
 test("operational access is denied before activation", async ({ page }) => {

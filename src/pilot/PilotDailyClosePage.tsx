@@ -247,7 +247,7 @@ export function PilotDailyClosePage() {
         metrics={[]}
       />
 
-      <Card className="p-3">
+      <Card className="compact-form p-3">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-xs font-bold uppercase tracking-wide text-muted">Location</p>
@@ -257,7 +257,7 @@ export function PilotDailyClosePage() {
             </p>
           </div>
 
-          <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[28rem]">
+          <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[24rem]">
             {locationOptions.length > 1 ? (
               <label className="block">
                 <span className="text-sm font-semibold text-ink">Workspace location</span>

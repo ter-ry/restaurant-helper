@@ -1252,7 +1252,7 @@ export function PilotPurchasesPage() {
 
   return (
     <div className="workspace-page">
-      <Card className="surface-panel workspace-card p-3 sm:p-4">
+      <Card className="surface-panel workspace-card compact-form p-3 sm:p-4">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex flex-wrap items-center gap-2">
             {[
@@ -1301,7 +1301,7 @@ export function PilotPurchasesPage() {
 
       {inventoryItemTargetIndex != null ? <Modal title="Create inventory item" size="small" onClose={() => setInventoryItemTargetIndex(null)}>
         <p className="text-sm text-muted">Create the missing item and keep this invoice draft open.</p>
-        <div className="mt-4 space-y-3">
+        <div className="compact-form mt-4 space-y-3">
           <label className="block"><span className="text-sm font-semibold text-ink">Item name</span><input className="input mt-1" value={newInventoryItem.name} onChange={(event) => setNewInventoryItem((current) => ({ ...current, name: event.target.value }))} /></label>
           <label className="block"><span className="text-sm font-semibold text-ink">Category</span><input className="input mt-1" value={newInventoryItem.category} onChange={(event) => setNewInventoryItem((current) => ({ ...current, category: event.target.value }))} /></label>
           <label className="block"><span className="text-sm font-semibold text-ink">Stock unit</span><input className="input mt-1" value={newInventoryItem.stockUnit} onChange={(event) => setNewInventoryItem((current) => ({ ...current, stockUnit: event.target.value }))} /></label>
@@ -1310,7 +1310,7 @@ export function PilotPurchasesPage() {
       </Modal> : null}
 
       <div
-        className="pilot-purchases-layout grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] xl:items-start"
+        className="pilot-purchases-layout compact-form grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] xl:items-start"
         data-testid="purchase-queue"
         onKeyDown={(event) => {
           if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;

@@ -75,7 +75,7 @@ export function DataTable<T>({ columns, data, getRowKey, onRowClick }: DataTable
           <thead className="pilot-table-header bg-slate-50 text-xs uppercase tracking-wide text-muted">
             <tr>
               {columns.map((column, index) => (
-                <th key={column.header} className={`px-4 py-3 font-bold ${column.className ?? ""}`} aria-sort={sort?.index === index ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                <th key={column.header} className={`px-3 py-2.5 font-bold ${column.className ?? ""}`} aria-sort={sort?.index === index ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}>
                   {column.sortValue ? (
                     <button type="button" className="inline-flex items-center gap-1 text-left" onClick={() => toggleSort(index)}>
                       {column.header}
@@ -97,7 +97,7 @@ export function DataTable<T>({ columns, data, getRowKey, onRowClick }: DataTable
                   const value =
                     typeof column.accessor === "function" ? column.accessor(row) : (row[column.accessor] as ReactNode);
                   return (
-                    <td key={column.header} className={`px-4 py-3 align-middle text-slate-700 ${column.className ?? ""}`}>
+                    <td key={column.header} className={`px-3 py-2.5 align-middle text-slate-700 ${column.className ?? ""}`}>
                       {value}
                     </td>
                   );
