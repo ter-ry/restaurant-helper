@@ -4547,6 +4547,204 @@ def delete_menu_costing_recipe_ingredient(recipe_id: int, ingredient_id: int):
     return _commit_json(response_payload)
 
 
+def _save_menu_costing_recipe_composition(recipe_id: int | None):
+    """Atomic recipe save: metadata plus the complete ordered ingredient list in one transaction.
+
+    `ingredients` is the full desired list (array order becomes sortOrder). Entries carrying an
+    `id` of an existing ingredient of this recipe are updated in place; entries without an id are
+    created; existing ingredients missing from the list are deleted. Any validation or constraint
+    failure rolls back everything and returns the same error shape as the granular endpoints.
+    """
+    context = _menu_costing_context()
+    if context is None:
+        return json_error("No pilot location is available for the current account.", 404)
+    organization, location = context
+    creating = recipe_id is None
+    recipe = None
+    if not creating:
+        # Row lock serializes concurrent composition saves on PostgreSQL (no-op on SQLite).
+        recipe = Recipe.query.filter_by(id=recipe_id, organization_id=organization.id, location_id=location.id).with_for_update().first()
+        if recipe is None:
+            return json_error("Recipe not found.", 404)
+    payload = _json_body()
+    recipe_data = _menu_costing_recipe_payload(payload, recipe)
+    raw_ingredients = payload.get("ingredients")
+    if raw_ingredients is not None and not isinstance(raw_ingredients, list):
+        raise RequestValidationError("Validation failed.", {"ingredients": "Ingredients must be a list."})
+
+    duplicate = Recipe.query.filter(
+        Recipe.organization_id == organization.id,
+        Recipe.location_id == location.id,
+        Recipe.normalized_name == recipe_data["normalized_name"],
+    )
+    if recipe is not None:
+        duplicate = duplicate.filter(Recipe.id != recipe.id)
+    if duplicate.first() is not None:
+        return json_error("A recipe with that name already exists in this location.", 409)
+
+    # Validate every ingredient before mutating anything.
+    parsed: list[dict[str, Any]] = []
+    seen_items: set[int] = set()
+    seen_ids: set[int] = set()
+    for index, raw in enumerate(raw_ingredients or []):
+        if not isinstance(raw, dict):
+            raise RequestValidationError("Validation failed.", {"ingredients": f"Ingredient {index + 1} is invalid."})
+        try:
+            item_id = int(raw.get("inventoryItemId"))
+        except (TypeError, ValueError):
+            raise RequestValidationError("Validation failed.", {"ingredients": f"Ingredient {index + 1}: choose an inventory item."}) from None
+        if item_id in seen_items:
+            return json_error("That ingredient is already linked to this recipe.", 409)
+        seen_items.add(item_id)
+        quantity_required = _to_quantity(raw.get("quantityRequired", 0), field="quantityRequired")
+        if quantity_required <= 0:
+            raise RequestValidationError("Validation failed.", {"ingredients": f"Ingredient {index + 1}: quantity must be greater than zero."})
+        existing_id = raw.get("id")
+        if existing_id in (None, ""):
+            existing_id = None
+        else:
+            try:
+                existing_id = int(existing_id)
+            except (TypeError, ValueError):
+                raise RequestValidationError("Validation failed.", {"ingredients": f"Ingredient {index + 1}: invalid id."}) from None
+        if existing_id is not None:
+            if existing_id in seen_ids:
+                raise RequestValidationError("Validation failed.", {"ingredients": f"Ingredient {index + 1}: id repeated."})
+            seen_ids.add(existing_id)
+        parsed.append({"id": existing_id, "inventory_item_id": item_id, "quantity": quantity_required, "unit": raw.get("unit"), "notes": raw.get("notes"), "sort_order": index})
+
+    inventory_items = {
+        item.id: item
+        for item in InventoryItem.query.filter(
+            InventoryItem.organization_id == organization.id,
+            InventoryItem.location_id == location.id,
+            InventoryItem.id.in_(seen_items or {-1}),
+        ).all()
+    }
+    if len(inventory_items) != len(seen_items):
+        return json_error("Inventory item not found.", 404)
+
+    existing_by_id: dict[int, RecipeIngredient] = {}
+    if recipe is not None:
+        existing_by_id = {row.id: row for row in RecipeIngredient.query.filter_by(recipe_id=recipe.id, organization_id=organization.id).all()}
+    requested_ids = {entry["id"] for entry in parsed if entry["id"] is not None}
+    if not requested_ids <= set(existing_by_id):
+        return json_error("Ingredient not found.", 404)
+
+    try:
+        if creating:
+            recipe = Recipe(organization_id=organization.id, location_id=location.id, created_by_user_id=current_user.id, updated_by_user_id=current_user.id, **recipe_data)
+            db.session.add(recipe)
+        else:
+            for field, value in recipe_data.items():
+                setattr(recipe, field, value)
+            recipe.updated_by_user_id = current_user.id
+
+        # Rows omitted from the request are deleted first. Rows re-pointed at a different inventory item are
+        # updated in place (stable ids, so a lost-response retry of the same payload still matches). Only rows
+        # whose target item is still held by another surviving row (a swap/cycle) cannot be re-pointed without
+        # tripping the (recipe, inventory item) unique constraint; those are deleted and recreated.
+        entries_by_id = {e["id"]: e for e in parsed if e["id"] is not None}
+        keep: dict[int, RecipeIngredient] = {}
+        for row_id, row in existing_by_id.items():
+            if row_id in entries_by_id:
+                keep[row_id] = row
+            else:
+                db.session.delete(row)
+        db.session.flush()
+        creators: dict[int, int | None] = {}
+        prior_notes: dict[int, str] = {}
+        original_item_ids = {row_id: row.inventory_item_id for row_id, row in keep.items()}
+        held = {row.inventory_item_id: row_id for row_id, row in keep.items()}
+        pending = [rid for rid, row in keep.items() if entries_by_id[rid]["inventory_item_id"] != row.inventory_item_id]
+        progressed = True
+        while pending and progressed:
+            progressed = False
+            for rid in list(pending):
+                row = keep[rid]
+                target = entries_by_id[rid]["inventory_item_id"]
+                if target not in held:
+                    held.pop(row.inventory_item_id, None)
+                    row.inventory_item_id = target
+                    held[target] = rid
+                    db.session.flush()
+                    pending.remove(rid)
+                    progressed = True
+        # Swap/cycle rows are recreated with their ORIGINAL ids so a lost-response retry of the same payload
+        # still resolves every id.
+        creators = {rid: keep[rid].created_by_user_id for rid in pending}
+        prior_notes = {rid: keep[rid].notes for rid in pending}
+        for rid in pending:
+            db.session.delete(keep.pop(rid))
+        db.session.flush()
+
+        # Explicit-id rows (incl. recreated swap/cycle rows) go first and are flushed before any auto-id insert,
+        # so a freed id can never be handed to a new row.
+        ordered = [e for e in parsed if e["id"] is not None] + [e for e in parsed if e["id"] is None]
+        flushed_explicit = False
+        for entry in ordered:
+            if entry["id"] is None and not flushed_explicit:
+                db.session.flush()
+                flushed_explicit = True
+            item = inventory_items[entry["inventory_item_id"]]
+            unit = str(entry["unit"] if entry["unit"] is not None else (item.stock_unit or "each")).strip() or (item.stock_unit or "each")
+            notes = str(entry["notes"]).strip() if entry["notes"] is not None else None
+            row = keep.get(entry["id"]) if entry["id"] is not None else None
+            if row is None:
+                db.session.add(
+                    RecipeIngredient(
+                        id=entry["id"],
+                        organization_id=organization.id,
+                        recipe_id=recipe.id,
+                        inventory_item_id=item.id,
+                        quantity_required=entry["quantity"],
+                        unit=unit,
+                        notes=(notes if notes is not None else prior_notes.get(entry["id"], "")) or "",
+                        sort_order=entry["sort_order"],
+                        created_by_user_id=creators.get(entry["id"], current_user.id),
+                        updated_by_user_id=current_user.id,
+                    )
+                )
+            else:
+                row.quantity_required = entry["quantity"]
+                # An unchanged item keeps its unit when omitted; a re-pointed item defaults to its own stock unit.
+                if entry["unit"] is not None or original_item_ids.get(entry["id"]) != item.id:
+                    row.unit = unit
+                if notes is not None:
+                    row.notes = notes
+                row.sort_order = entry["sort_order"]
+                row.updated_by_user_id = current_user.id
+        db.session.flush()
+        record_audit_event(
+            event_type="menu_costing.recipe_created" if creating else "menu_costing.recipe_saved",
+            entity_type="recipe",
+            entity_id=recipe.id,
+            organization_id=organization.id,
+            location_id=location.id,
+            actor_user_id=current_user.id,
+            metadata={"name": recipe.name, "ingredientCount": len(parsed)},
+        )
+        db.session.refresh(recipe)
+        response_payload = serialize_recipe(recipe)
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return json_error("This recipe changed elsewhere (duplicate name or ingredient). Reload and try again.", 409)
+    return jsonify(response_payload), 201 if creating else 200
+
+
+@bp.post("/api/pilot/menu-costing/recipes/save")
+@login_required
+def save_new_menu_costing_recipe():
+    return _save_menu_costing_recipe_composition(None)
+
+
+@bp.post("/api/pilot/menu-costing/recipes/<int:recipe_id>/save")
+@login_required
+def save_menu_costing_recipe(recipe_id: int):
+    return _save_menu_costing_recipe_composition(recipe_id)
+
+
 @bp.post("/api/pilot/menu-costing/menu-items")
 @login_required
 def create_menu_costing_menu_item():

@@ -547,7 +547,7 @@ class Recipe(TimestampMixin, db.Model):
 
     organization = db.relationship("Organization")
     location = db.relationship("RestaurantLocation")
-    ingredients = db.relationship("RecipeIngredient", back_populates="recipe", cascade="all, delete-orphan", order_by="RecipeIngredient.id.asc()")
+    ingredients = db.relationship("RecipeIngredient", back_populates="recipe", cascade="all, delete-orphan", order_by="(RecipeIngredient.sort_order.asc(), RecipeIngredient.id.asc())")
     menu_items = db.relationship("MenuItem", back_populates="recipe")
     created_by = db.relationship("User", foreign_keys=[created_by_user_id])
     updated_by = db.relationship("User", foreign_keys=[updated_by_user_id])
