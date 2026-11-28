@@ -59,10 +59,10 @@ describe("PilotWorkspaceLayout", () => {
     mockSession.refreshSession.mockReset();
   });
 
-  it("shows the new Square and Daily Close routes in the pilot shell navigation", () => {
+  it("shows the POS and Daily Close routes in the pilot shell navigation", () => {
     renderLayout();
 
-    expect(screen.getByRole("link", { name: "Square" })).toHaveAttribute("href", "/app/square");
+    expect(screen.getByRole("link", { name: "POS" })).toHaveAttribute("href", "/app/pos");
     expect(screen.getByRole("link", { name: "Daily Close" })).toHaveAttribute("href", "/app/daily-close");
     expect(screen.getByText("Dashboard outlet")).toBeVisible();
   });

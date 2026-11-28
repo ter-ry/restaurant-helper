@@ -262,7 +262,7 @@ export function PilotCloverConnection() {
         </div>
       ) : (
         <div className="mt-4 flex flex-wrap gap-2">
-          <Button type="button" disabled={demoReadOnly || busy} onClick={() => void beginPilotCloverConnection(organizationId)}><ExternalLink className="mr-2 h-4 w-4" />Connect Clover sandbox</Button>
+          <Button type="button" disabled={demoReadOnly || busy || !statusReady || loading} onClick={() => void beginPilotCloverConnection(organizationId)}><ExternalLink className="mr-2 h-4 w-4" />Connect Clover sandbox</Button>
           <Button type="button" variant="ghost" disabled={busy} onClick={() => void load()}><RefreshCw className="mr-2 h-4 w-4" />Refresh</Button>
         </div>
       )}

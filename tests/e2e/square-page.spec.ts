@@ -1,7 +1,7 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
 /**
- * Browser acceptance for the Square integration page (/app/square, #343).
+ * Browser acceptance for the Square integration page (/app/pos/square, #343).
  * The API is a small stateful fake (no Flask/PostgreSQL, no Square), so this exercises the real React UI,
  * its in-progress/success/failure states, duplicate-submit guard and server re-fetch at phone and tablet widths.
  */
@@ -159,7 +159,7 @@ async function expectNoOverflow(page: Page) {
 }
 
 async function openSquare(page: Page) {
-  await page.goto("/app/square", { waitUntil: "domcontentloaded" });
+  await page.goto("/app/pos/square", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Location mapping" })).toBeVisible();
 }
 

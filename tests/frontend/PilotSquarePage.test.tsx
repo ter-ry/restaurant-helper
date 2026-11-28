@@ -285,8 +285,6 @@ describe("PilotSquarePage", () => {
     expect(document.querySelectorAll(".square-status-card")).toHaveLength(5);
     expect(screen.queryByText("Private workspace for Square connection")).not.toBeInTheDocument();
     expect(screen.queryByText("pilot shell")).not.toBeInTheDocument();
-    expect(screen.getByText("Clover sandbox")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Connect Clover sandbox" })).toBeVisible();
   });
 
   it("offers Retry after the Square load fails and recovers on success", async () => {
@@ -327,15 +325,6 @@ describe("PilotSquarePage", () => {
     expect(screen.queryByText("Clover sandbox")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Connect Clover sandbox" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Connect Square" })).toBeVisible();
-  });
-
-  it("requires explicit continuation for a Clover merchant launch", async () => {
-    render(<MemoryRouter initialEntries={["/app/square?cloverLaunch=1"]}><PilotSquarePage /></MemoryRouter>);
-    expect(await screen.findByText("Clover launched Flowtally")).toBeVisible();
-    const continueButton = screen.getByRole("button", { name: "Continue Clover setup" });
-    expect(continueButton).toBeEnabled();
-    fireEvent.click(continueButton);
-    expect(mockApi.resumePilotCloverLaunch).toHaveBeenCalledWith(42);
   });
 
   it("keeps simulated wording and controls limited to read-only demo mode", async () => {
@@ -577,39 +566,12 @@ describe("PilotSquarePage", () => {
     expect(container.querySelectorAll(".max-h-44.overflow-y-auto")).toHaveLength(1);
   });
 
-  it("shows the gated read-only Clover catalog preview without exposing write controls", async () => {
+  it("never renders Clover panels or Sandbox wording on the Square workspace", async () => {
     mockApi.fetchPilotSquareStatus.mockResolvedValue({ connection: createConnectedConnection() });
-    mockApi.fetchPilotCloverStatus.mockResolvedValue({
-      enabled: true,
-      catalogEnabled: true,
-      connection: { environment: "sandbox", region: "north_america", merchantName: "Sandbox Cafe", status: "connected" },
-    });
-    mockApi.fetchPilotCloverCatalog.mockResolvedValue({
-      readOnly: true,
-      merchantName: "Sandbox Cafe",
-      location: { id: "location-1", name: "Main" },
-      itemCount: 1,
-      items: [{
-        id: "item-1",
-        name: "Latte",
-        priceCents: 500,
-        active: true,
-        deleted: false,
-        hidden: false,
-        available: true,
-        itemGroupId: "group-1",
-        optionIds: ["option-1"],
-        categories: [{ id: "category-1", name: "Breakfast", active: true }],
-        modifierGroups: [],
-      }],
-    });
-
-    render(<MemoryRouter><PilotSquarePage /></MemoryRouter>);
-    expect(await screen.findByRole("button", { name: "Preview catalog" })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Preview catalog" }));
-    expect(await screen.findByRole("region", { name: "Clover catalog preview" })).toBeVisible();
-    expect(screen.getByText("Latte")).toBeVisible();
-    expect(screen.getByText("No changes")).toBeVisible();
-    expect(mockApi.fetchPilotCloverCatalog).toHaveBeenCalledWith(42);
+    render(<MemoryRouter initialEntries={["/app/pos/square?cloverLaunch=1"]}><PilotSquarePage /></MemoryRouter>);
+    expect(await screen.findByText("Connection and health")).toBeVisible();
+    expect(screen.queryByText(/clover/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/sandbox/i)).not.toBeInTheDocument();
+    expect(mockApi.fetchPilotCloverStatus).not.toHaveBeenCalled();
   });
 });

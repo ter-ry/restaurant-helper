@@ -37,7 +37,11 @@ const PilotReportsPage = lazyNamed(() => import("./pilot/PilotReportsPage"), "Pi
 const PilotPurchasesPage = lazyNamed(() => import("./pilot/PilotPurchasesPage"), "PilotPurchasesPage");
 const PilotInventoryPage = lazyNamed(() => import("./pilot/PilotInventoryPage"), "PilotInventoryPage");
 const PilotMenuCostingPage = lazyNamed(() => import("./pilot/PilotMenuCostingPage"), "PilotMenuCostingPage");
-const PilotSquarePage = lazyNamed(() => import("./pilot/PilotSquarePage"), "PilotSquarePage");
+const PilotPosLayout = lazyNamed(() => import("./pilot/PilotPosPage"), "PilotPosLayout");
+const PilotPosEntry = lazyNamed(() => import("./pilot/PilotPosPage"), "PilotPosEntry");
+const PilotPosSquareRoute = lazyNamed(() => import("./pilot/PilotPosPage"), "PilotPosSquareRoute");
+const PilotPosCloverRoute = lazyNamed(() => import("./pilot/PilotPosPage"), "PilotPosCloverRoute");
+const PilotLegacySquareRedirect = lazyNamed(() => import("./pilot/PilotPosPage"), "PilotLegacySquareRedirect");
 const PilotDailyClosePage = lazyNamed(() => import("./pilot/PilotDailyClosePage"), "PilotDailyClosePage");
 const PilotSquareUsagePage = lazyNamed(() => import("./pilot/PilotSquareUsagePage"), "PilotSquareUsagePage");
 const PilotStockCountsPage = lazyNamed(() => import("./pilot/PilotStockCountsPage"), "PilotStockCountsPage");
@@ -225,13 +229,19 @@ const pilotAppRoutes = pilotAppEnabled
                   </PilotModuleGate>
                 ),
               },
+              { path: "square", element: <PilotLegacySquareRedirect /> },
               {
-                path: "square",
+                path: "pos",
                 element: (
-                  <PilotModuleGate moduleKey="SQUARE_INTEGRATION" moduleName="Square Integration">
-                    <PilotSquarePage />
+                  <PilotModuleGate moduleKey="SQUARE_INTEGRATION" moduleName="POS">
+                    <PilotPosLayout />
                   </PilotModuleGate>
                 ),
+                children: [
+                  { index: true, element: <PilotPosEntry /> },
+                  { path: "square", element: <PilotPosSquareRoute /> },
+                  { path: "clover", element: <PilotPosCloverRoute /> },
+                ],
               },
               {
                 path: "daily-close",

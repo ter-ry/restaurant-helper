@@ -38,7 +38,7 @@ test.describe("workspace navigation visibility", () => {
     await installSession(page, "owner", ALL_MODULES);
     await page.goto("/app/dashboard");
     const nav = page.getByRole("navigation", { name: "Workspace navigation" });
-    for (const label of ["Dashboard", "Purchases", "Inventory", "Menu Costing", "Square", "Daily Close", "Reports"]) {
+    for (const label of ["Dashboard", "Purchases", "Inventory", "Menu Costing", "POS", "Daily Close", "Reports"]) {
       await expect(nav.getByRole("link", { name: label, exact: true })).toBeVisible();
     }
     await nav.getByRole("link", { name: "Reports", exact: true }).click();
@@ -60,7 +60,7 @@ test.describe("workspace navigation visibility", () => {
     await page.goto("/app/dashboard");
     const nav = page.getByRole("navigation", { name: "Workspace navigation" });
     await expect(nav.getByRole("link", { name: "Purchases", exact: true })).toBeVisible();
-    for (const label of ["Menu Costing", "Square", "Daily Close"]) {
+    for (const label of ["Menu Costing", "POS", "Daily Close"]) {
       await expect(nav.getByRole("link", { name: label, exact: true })).toHaveCount(0);
     }
   });

@@ -170,4 +170,21 @@ describe("PilotCloverConnection tenant state", () => {
     await waitFor(() => expect(screen.queryByText("Previously loaded")).not.toBeInTheDocument());
     expect(screen.queryByRole("region", { name: "Clover catalog preview" })).not.toBeInTheDocument();
   });
+
+  it("requires explicit continuation for a Clover merchant launch", async () => {
+    mockApi.fetchPilotCloverStatus.mockResolvedValue({ enabled: true, connection: { environment: "sandbox", region: "north_america", status: "disconnected" } });
+    render(<MemoryRouter initialEntries={["/app/pos/clover?cloverLaunch=1"]}><PilotCloverConnection /></MemoryRouter>);
+    expect(await screen.findByText("Clover launched Flowtally")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Continue Clover setup" }));
+    expect(mockApi.resumePilotCloverLaunch).toHaveBeenCalledWith(1);
+  });
+
+  it("shows the gated read-only catalog preview without write controls", async () => {
+    mockApi.fetchPilotCloverStatus.mockResolvedValue(connectedStatus(1));
+    mockApi.fetchPilotCloverCatalog.mockResolvedValue(catalog("Latte"));
+    render(<MemoryRouter><PilotCloverConnection /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole("button", { name: "Preview catalog" }));
+    expect(await screen.findByRole("region", { name: "Clover catalog preview" })).toBeVisible();
+    expect(screen.getByText("No changes")).toBeVisible();
+  });
 });

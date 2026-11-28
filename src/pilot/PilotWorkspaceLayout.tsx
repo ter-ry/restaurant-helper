@@ -13,7 +13,7 @@ const navItems = [
   { to: "/app/purchases", label: "Purchases", group: "Operations", icon: ReceiptText },
   { to: "/app/inventory", label: "Inventory", group: "Operations", icon: Package },
   { to: "/app/menu-costing", label: "Menu Costing", group: "Menu & Cost", icon: UtensilsCrossed, moduleKey: "MENU_COSTING" },
-  { to: "/app/square", label: "Square", group: "Sales & Close", icon: SquareStack, moduleKey: "SQUARE_INTEGRATION" },
+  { to: "/app/pos", label: "POS", group: "Sales & Close", icon: SquareStack, moduleKey: "SQUARE_INTEGRATION" },
   { to: "/app/daily-close", label: "Daily Close", group: "Sales & Close", icon: CircleDollarSign, moduleKey: "DAILY_CLOSE" },
   { to: "/owner/reports", label: "Reports", group: "Reports", icon: BarChart3, ownerOnly: true },
 ];
